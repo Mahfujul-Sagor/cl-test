@@ -1,101 +1,116 @@
-import Image from "next/image";
+"use client";
+import { CldUploadWidget } from "next-cloudinary";
+import { useState, useEffect, useCallback } from "react";
+import { ReactCompareSlider, ReactCompareSliderImage } from "react-compare-slider";
+import { Cloudinary } from "@cloudinary/url-gen";
+import { generativeRestore, upscale, enhance } from "@cloudinary/url-gen/actions/effect";
+import { improve } from "@cloudinary/url-gen/actions/adjust";
 
 export default function Home() {
-  return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-8 row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="https://nextjs.org/icons/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-semibold">
-              app/page.js
-            </code>
-            .
-          </li>
-          <li>Save and see your changes instantly.</li>
-        </ol>
+  const [resource, setResource] = useState(null);
+  const [enhancedImage, setEnhancedImage] = useState(null);
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="https://nextjs.org/icons/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
+  // Function to generate enhanced image
+  const generateEnhancedImage = useCallback((imageUrl) => {
+    const cld = new Cloudinary({
+      cloud: {
+        cloudName: process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME
+      }
+    });
+
+    // Get the public_id from the uploaded URL (remove the URL prefix for transformations)
+    const publicId = imageUrl.split('/').pop().split('.')[0];
+
+    // Apply transformation and generate the enhanced image URL
+    const transformedImage = cld.image(publicId);        // Create Cloudinary image instance using public_id
+    transformedImage
+      .effect(generativeRestore())
+      .effect(upscale())
+      .effect(enhance())
+
+    return transformedImage.toURL();                     // Generate and return the enhanced image URL
+  }, []);  // Empty dependency array ensures the function remains stable across renders
+
+  // Load the uploaded image URL from local storage when the component mounts
+  useEffect(() => {
+    const storedImage = localStorage.getItem("uploadedImage");
+
+    if (storedImage) {
+      setResource(storedImage);
+      const enhancedUrl = generateEnhancedImage(storedImage);  // Generate enhanced image using the stored image URL
+      setEnhancedImage(enhancedUrl);
+    }
+  }, [generateEnhancedImage]);  // Include `generateEnhancedImage` in dependency array
+
+  const handleImageUpload = (result) => {
+    const uploadedUrl = result?.info?.secure_url;
+    setResource(uploadedUrl);
+    localStorage.setItem("uploadedImage", uploadedUrl); // Save the image URL to local storage
+
+    // Generate enhanced image immediately after upload
+    const enhancedUrl = generateEnhancedImage(uploadedUrl);   // Use the function to enhance the uploaded image
+    setEnhancedImage(enhancedUrl);
+  };
+
+  return (
+    <main className="min-h-screen w-full flex flex-col justify-start items-center gap-20 pt-20">
+      <h1 className="text-6xl font-bold">Image Upload & Compare</h1>
+
+      {/* Only show the upload button if no image has been uploaded yet */}
+      {!resource && (
+        <CldUploadWidget
+          uploadPreset="betatest"
+          onSuccess={(result) => handleImageUpload(result)}
+          onQueuesEnd={({ widget }) => widget.close()}
+        >
+          {({ open }) => (
+            <button
+              onClick={() => open()}
+              className="border bg-white text-black font-medium px-4 py-2 rounded-lg"
+            >
+              Upload an Image
+            </button>
+          )}
+        </CldUploadWidget>
+      )}
+
+      {/* Display the uploaded image and the comparison slider */}
+      {resource && enhancedImage && (
+        <div className="flex flex-col items-center gap-4">
+          <h2 className="text-3xl font-medium">Compare Images</h2>
+          <div className="w-[600px] h-[600px] rounded-lg overflow-hidden">
+            <ReactCompareSlider
+              itemOne={
+                <ReactCompareSliderImage
+                  src={resource} // Original uploaded image
+                  alt="Original Image"
+                  style={{ objectFit: "cover" }}
+                />
+              }
+              itemTwo={
+                <ReactCompareSliderImage
+                  src={enhancedImage} // Enhanced image
+                  alt="Enhanced Image"
+                  style={{ objectFit: "cover" }}
+                />
+              }
+              style={{ width: '100%', height: '100%' }} // Makes the slider take the full width and height of the wrapper
             />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:min-w-44"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+          </div>
+
+          {/* Option to remove the image and upload again */}
+          <button
+            onClick={() => {
+              setResource(null);
+              setEnhancedImage(null);
+              localStorage.removeItem("uploadedImage"); // Clear image from local storage
+            }}
+            className="border bg-red-500 text-white font-medium px-4 py-2 rounded-lg mt-4"
           >
-            Read our docs
-          </a>
+            Remove Image
+          </button>
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-6 flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="https://nextjs.org/icons/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="https://nextjs.org/icons/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="https://nextjs.org/icons/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
-    </div>
+      )}
+    </main>
   );
 }
